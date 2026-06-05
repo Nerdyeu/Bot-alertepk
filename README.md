@@ -150,7 +150,8 @@ L'historique du graphique utilise **uniquement la cote ZebraDex** (source jugée
 | Magic Bazar, Cartamania, Ludifolie, Otaku Manga | `html` | ⚙️ à configurer | sélecteurs CSS dans la config du site |
 | Fnac, Cultura, Amazon, Micromania | `blocked` | ⛔ non scrappées | anti-bot / API officielle requise |
 | Cardmarket | `blocked` | ⛔ | **API Cardmarket** officielle (OAuth) requise |
-| eBay | `blocked` | ⛔ | **API eBay Browse** officielle (clé) requise |
+| Vinted, Leboncoin | `blocked` | ⛔ | anti-bot + CGU ; utiliser leurs **alertes natives** |
+| **eBay** | `ebay` | ✅ via API | **API officielle Browse** (clé gratuite à configurer) |
 
 > **Note importante (anti-bot & IP).** Plusieurs boutiques Shopify renvoient une page
 > *« Verifying your connection… »* aux requêtes venant d'**IP datacenter/cloud**. Depuis votre
@@ -160,12 +161,19 @@ L'historique du graphique utilise **uniquement la cote ZebraDex** (source jugée
 
 ### Marché secondaire (propre)
 
-- **Cardmarket** : inscrivez-vous au programme **MKM API** (OAuth 1.0a), puis créez un adaptateur
-  `cardmarket` (clé/secret dans `.env`). Aucun scraping.
-- **eBay** : utilisez l'**API Browse** (App ID / OAuth) pour rechercher des annonces, puis un adaptateur `ebay`.
-
-Ces deux intégrations sont laissées en `blocked` par défaut (pas de scraping), prêtes à être
-remplacées par un adaptateur officiel.
+- **eBay** : adaptateur **`ebay`** inclus, basé sur l'**API officielle Browse** (aucun scraping).
+  1. Crée un compte développeur gratuit sur **https://developer.ebay.com/** → *My Account / Application Keys*.
+  2. Récupère ton **App ID (Client ID)** et **Cert ID (Client Secret)** de production.
+  3. Mets-les dans `.env` (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`), puis **active** la boutique « eBay »
+     dans l'onglet *Sites*.
+  - Le bot fait un flux OAuth2 *client credentials*, cherche les annonces (achat immédiat par défaut),
+    et renvoie la **moins chère qui correspond** (prix hors frais de port). Filtre configurable dans la
+    config de la boutique (ex. neuf seulement : `"filter": "buyingOptions:{FIXED_PRICE},conditionIds:{1000}"`).
+- **Cardmarket** : laissé en `blocked` ; nécessite le programme **MKM API** (OAuth). Un adaptateur
+  `cardmarket` peut être ajouté sur le même modèle qu'eBay.
+- **Vinted / Leboncoin** : **non supportés** volontairement. Protections anti‑bot agressives + CGU
+  interdisant le scraping → laissés en `blocked` (signalés comme tels). Pour Vinted, le plus simple et
+  100 % légal est d'utiliser ses **alertes natives** (recherche sauvegardée dans l'appli).
 
 ---
 

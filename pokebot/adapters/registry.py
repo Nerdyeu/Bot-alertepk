@@ -9,12 +9,14 @@ from ..models import Shop
 from ..utils.http import HttpClient
 from .base import ShopAdapter
 from .blocked import BlockedAdapter
+from .ebay import EbayAdapter
 from .html import HtmlAdapter
 from .shopify import ShopifyAdapter
 
 _REGISTRY: dict[str, type[ShopAdapter]] = {
     ShopifyAdapter.type: ShopifyAdapter,
     HtmlAdapter.type: HtmlAdapter,
+    EbayAdapter.type: EbayAdapter,
     BlockedAdapter.type: BlockedAdapter,
 }
 

@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
 
+    # eBay (API officielle Browse — voir README)
+    ebay_client_id: str | None = None
+    ebay_client_secret: str | None = None
+    ebay_marketplace_id: str = "EBAY_FR"
+
     @property
     def channels(self) -> list[str]:
         return [c.strip().lower() for c in self.notify_channels.split(",") if c.strip()]

@@ -61,8 +61,16 @@ DEFAULT_SHOPS: list[dict] = [
     {"key": "cardmarket", "name": "Cardmarket", "base_url": "https://www.cardmarket.com",
      "adapter": "blocked", "enabled": False,
      "config": {"reason": "API Cardmarket officielle (OAuth) requise — voir README"}},
-    {"key": "ebay", "name": "eBay", "base_url": "https://www.ebay.fr", "adapter": "blocked",
-     "enabled": False, "config": {"reason": "API eBay Browse officielle (cle) requise — voir README"}},
+    {"key": "vinted", "name": "Vinted", "base_url": "https://www.vinted.fr", "adapter": "blocked",
+     "enabled": False,
+     "config": {"reason": "protection anti-bot + CGU (pas de scraping) ; utilisez les alertes "
+                          "natives de l'appli Vinted (recherche sauvegardee)"}},
+
+    # --- Marche secondaire via API officielle ---
+    {"key": "ebay", "name": "eBay", "base_url": "https://api.ebay.com", "adapter": "ebay",
+     "enabled": False,
+     "config": {"filter": "buyingOptions:{FIXED_PRICE}", "marketplace_id": "EBAY_FR"},
+     "note": "Renseignez EBAY_CLIENT_ID / EBAY_CLIENT_SECRET dans .env puis activez."},
 ]
 
 EXAMPLE_PRODUCT = {
