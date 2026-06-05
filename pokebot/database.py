@@ -20,10 +20,27 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_db() -> None:
-    """Cree les tables si elles n'existent pas."""
+    """Cree les tables si elles n'existent pas, puis applique les migrations legeres."""
     from . import models  # noqa: F401  (enregistre les modeles sur Base)
 
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate() -> None:
+    """Migrations SQLite minimalistes (ajout de colonnes manquantes)."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(shops)")]
+        if "search_method" not in cols:
+            conn.exec_driver_sql(
+                "ALTER TABLE shops ADD COLUMN search_method VARCHAR(40) DEFAULT 'shopify'"
+            )
+            # Backfill depuis l'adaptateur existant
+            conn.exec_driver_sql("UPDATE shops SET search_method='ebay' WHERE adapter='ebay'")
+            conn.exec_driver_sql("UPDATE shops SET search_method='none' WHERE adapter='blocked'")
+            conn.exec_driver_sql("UPDATE shops SET search_method='page_produit' WHERE adapter='html'")
 
 
 @contextmanager

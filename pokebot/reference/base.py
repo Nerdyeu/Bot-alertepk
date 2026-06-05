@@ -12,6 +12,8 @@ class ReferenceResult:
     price: float | None
     source: str
     note: str = ""
+    image_url: str | None = None  # image ZebraDex (sert a la confirmation par image)
+    ref_url: str | None = None  # URL de la fiche ZebraDex correspondante
 
 
 class ReferenceProvider:
@@ -22,3 +24,6 @@ class ReferenceProvider:
 
     def get(self, product: Product) -> ReferenceResult:  # pragma: no cover
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Libere les ressources eventuelles (ex: client HTTP). No-op par defaut."""

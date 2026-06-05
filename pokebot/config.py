@@ -46,9 +46,14 @@ class Settings(BaseSettings):
     image_match_max_distance: int = 12
 
     # Prix de reference (ZebraDex)
-    reference_provider: str = "manual"  # manual | zebradex
+    reference_provider: str = "zebradex"  # manual | zebradex
     reference_refresh_hours: float = 24.0
-    zebradex_api_base: str | None = None
+    zebradex_base: str = "https://zebradex.fr"  # endpoint public de recherche (lecture seule)
+    zebradex_lang: str = "fr"  # fr | ja
+    # Opt-in explicite : interroger l'endpoint public de cote ZebraDex bien que son
+    # robots.txt interdise /include/ (lecture seule, 1x/jour, rate-limite, ZebraDex uniquement).
+    zebradex_ignore_robots: bool = True
+    zebradex_api_base: str | None = None  # override avance d'une base d'API
     zebradex_email: str | None = None
     zebradex_password: str | None = None
 
@@ -57,6 +62,11 @@ class Settings(BaseSettings):
     discord_webhook_url: str | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+
+    # eBay (API officielle Browse — voir README)
+    ebay_client_id: str | None = None
+    ebay_client_secret: str | None = None
+    ebay_marketplace_id: str = "EBAY_FR"
 
     @property
     def channels(self) -> list[str]:

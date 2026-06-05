@@ -39,11 +39,15 @@ def product_to_dict(product: Product, settings: Settings) -> dict:
 
 
 def shop_to_dict(shop: Shop) -> dict:
+    from ..search_methods import label_of
+
     return {
         "id": shop.id,
         "key": shop.key,
         "name": shop.name,
         "base_url": shop.base_url,
+        "search_method": shop.search_method,
+        "method_label": label_of(shop.search_method),
         "adapter": shop.adapter,
         "enabled": shop.enabled,
         "config": shop.config or {},

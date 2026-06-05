@@ -3,116 +3,141 @@
 {% block content %}
 
 <div class="panel">
-  <h2 id="form-title">Nouveau site</h2>
+  <h2 id="form-title">Ajouter un site</h2>
   <input type="hidden" id="s-id" />
   <div class="grid-form">
-    <div><label>Cle (slug) *</label><input id="s-key" placeholder="ma-boutique" /></div>
     <div><label>Nom *</label><input id="s-name" placeholder="Ma Boutique" /></div>
-    <div><label>URL de base *</label><input id="s-url" placeholder="https://maboutique.fr" /></div>
-    <div><label>Adaptateur</label><select id="s-adapter"></select></div>
-    <div><label>Actif</label><select id="s-enabled"><option value="true">Oui</option><option value="false">Non</option></select></div>
+    <div><label>Lien d'accueil (URL) *</label><input id="s-url" placeholder="https://maboutique.fr" /></div>
+    <div><label>Manière de rechercher</label><select id="s-method"></select></div>
+    <div><label>Statut</label><select id="s-enabled"><option value="true">Actif</option><option value="false">Inactif</option></select></div>
   </div>
-  <div><label>Config (JSON) — pour l'adaptateur "html" : search_url, result_link_selector, price_selector, availability_selector…</label>
-    <textarea id="s-config" placeholder='{"search_url": "https://…/recherche?s={query}", "price_selector": ".price"}'></textarea></div>
-  <div><label>Note</label><input id="s-note" style="width:100%" /></div>
-  <div style="margin-top:10px;display:flex;gap:10px">
+  <p class="muted" id="s-method-desc" style="margin:6px 0 0"></p>
+  <div style="margin-top:12px;display:flex;gap:10px">
     <button id="s-save">Enregistrer</button>
     <button class="secondary" id="s-cancel" style="display:none">Annuler</button>
   </div>
-  <p class="muted" style="margin-top:8px">
-    Astuce : <strong>shopify</strong> = endpoints JSON automatiques ; <strong>html</strong> = selecteurs CSS a renseigner ;
-    <strong>blocked</strong> = site volontairement non scrappe (signale en echec).
-  </p>
 </div>
 
 <div class="panel">
-  <h2>Sites surveilles</h2>
-  <table>
-    <thead><tr><th>Site</th><th>URL</th><th>Adaptateur</th><th>Actif</th><th>Note</th><th>Actions</th></tr></thead>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0">Sites surveillés</h2>
+    <button class="danger small" id="s-clear">🗑️ Vider la liste</button>
+  </div>
+  <table style="margin-top:12px">
+    <thead><tr><th>Nom</th><th>Lien d'accueil</th><th>Manière de rechercher</th><th>Statut</th><th>Actions</th></tr></thead>
     <tbody id="shops-body"></tbody>
   </table>
+  <p class="muted" id="shops-empty" style="display:none">Aucun site pour l'instant. Ajoute ta première boutique ci-dessus 👆</p>
 </div>
 
 {% endblock %}
 {% block script %}
 <script>
-let ADAPTERS = ["shopify", "html", "blocked"];
+let METHODS = [];
+let SHOPS_BY_ID = {};
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function methodDesc(key) {
+  const m = METHODS.find((x) => x.key === key);
+  if (!m) return "";
+  return m.description + (m.needs_keys ? " ⚠️ pense à renseigner la clé dans .env." : "");
+}
+function refreshMethodDesc() {
+  document.getElementById("s-method-desc").textContent = methodDesc(document.getElementById("s-method").value);
+}
 
 function form() {
-  let config = {};
-  const raw = document.getElementById("s-config").value.trim();
-  if (raw) { try { config = JSON.parse(raw); } catch (e) { throw new Error("Config JSON invalide"); } }
   return {
-    key: document.getElementById("s-key").value.trim(),
     name: document.getElementById("s-name").value.trim(),
     base_url: document.getElementById("s-url").value.trim(),
-    adapter: document.getElementById("s-adapter").value,
+    search_method: document.getElementById("s-method").value,
     enabled: document.getElementById("s-enabled").value === "true",
-    config,
-    note: document.getElementById("s-note").value.trim() || null,
   };
 }
 function resetForm() {
   document.getElementById("s-id").value = "";
-  ["s-key","s-name","s-url","s-config","s-note"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("s-name").value = "";
+  document.getElementById("s-url").value = "";
+  document.getElementById("s-method").selectedIndex = 0;
   document.getElementById("s-enabled").value = "true";
-  document.getElementById("s-adapter").selectedIndex = 0;
-  document.getElementById("form-title").textContent = "Nouveau site";
+  document.getElementById("form-title").textContent = "Ajouter un site";
   document.getElementById("s-cancel").style.display = "none";
+  refreshMethodDesc();
 }
 function fillForm(s) {
   document.getElementById("s-id").value = s.id;
-  document.getElementById("s-key").value = s.key;
   document.getElementById("s-name").value = s.name;
   document.getElementById("s-url").value = s.base_url;
-  document.getElementById("s-adapter").value = s.adapter;
+  document.getElementById("s-method").value = s.search_method;
   document.getElementById("s-enabled").value = s.enabled ? "true" : "false";
-  document.getElementById("s-config").value = Object.keys(s.config || {}).length ? JSON.stringify(s.config, null, 2) : "";
-  document.getElementById("s-note").value = s.note || "";
   document.getElementById("form-title").textContent = "Modifier : " + s.name;
   document.getElementById("s-cancel").style.display = "inline-block";
+  refreshMethodDesc();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+function editShop(id) { const s = SHOPS_BY_ID[id]; if (s) fillForm(s); }
+
+document.getElementById("s-method").addEventListener("change", refreshMethodDesc);
 
 document.getElementById("s-save").addEventListener("click", async () => {
-  let data;
-  try { data = form(); } catch (e) { return toast(e.message, false); }
-  if (!data.key || !data.name || !data.base_url) return toast("Cle, nom et URL requis", false);
+  const data = form();
+  if (!data.name || !data.base_url) return toast("Nom et lien d'accueil requis", false);
   const id = document.getElementById("s-id").value;
   try {
     if (id) await apiPut("/api/shops/" + id, data);
     else await apiPost("/api/shops", data);
-    toast("Site enregistre"); resetForm(); load();
+    toast("Site enregistré"); resetForm(); load();
   } catch (e) { toast("Erreur: " + e.message, false); }
 });
 document.getElementById("s-cancel").addEventListener("click", resetForm);
 
 async function toggleShop(s) {
-  try { await apiPut("/api/shops/" + s.id, { ...s, enabled: !s.enabled }); load(); }
-  catch (e) { toast("Erreur: " + e.message, false); }
+  try {
+    await apiPut("/api/shops/" + s.id, {
+      name: s.name, base_url: s.base_url, search_method: s.search_method, enabled: !s.enabled,
+    });
+    load();
+  } catch (e) { toast("Erreur: " + e.message, false); }
 }
+function toggleShopById(id) { const s = SHOPS_BY_ID[id]; if (s) toggleShop(s); }
+
 async function removeShop(id) {
   if (!confirm("Supprimer ce site ?")) return;
-  try { await apiDel("/api/shops/" + id); toast("Site supprime"); load(); }
+  try { await apiDel("/api/shops/" + id); toast("Site supprimé"); load(); }
   catch (e) { toast("Erreur: " + e.message, false); }
 }
 
+document.getElementById("s-clear").addEventListener("click", async () => {
+  if (!confirm("Vider TOUTE la liste des sites ? (tes produits ne sont pas touchés)")) return;
+  try { const r = await apiPost("/api/shops/clear"); toast(r.deleted + " site(s) supprimé(s)"); load(); }
+  catch (e) { toast("Erreur: " + e.message, false); }
+});
+
 async function load() {
   const data = await apiGet("/api/shops");
-  ADAPTERS = data.adapter_types || ADAPTERS;
-  document.getElementById("s-adapter").innerHTML = ADAPTERS.map(a => `<option value="${a}">${a}</option>`).join("");
+  METHODS = data.search_methods || [];
+  const sel = document.getElementById("s-method");
+  if (!sel.options.length) {
+    sel.innerHTML = METHODS.map((m) => `<option value="${m.key}">${escapeHtml(m.label)}</option>`).join("");
+    refreshMethodDesc();
+  }
   const tb = document.getElementById("shops-body");
   tb.innerHTML = "";
+  SHOPS_BY_ID = {};
+  document.getElementById("shops-empty").style.display = data.shops.length ? "none" : "block";
   for (const s of data.shops) {
+    SHOPS_BY_ID[s.id] = s;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td><strong>${s.name}</strong> <span class="muted">${s.key}</span></td>
-      <td><a href="${s.base_url}" target="_blank" rel="noopener">${s.base_url}</a></td>
-      <td>${s.adapter}</td>
-      <td><button class="small secondary" onclick='toggleShop(${JSON.stringify(s)})'>${s.enabled ? "✅ actif" : "— inactif"}</button></td>
-      <td class="muted">${s.note || ""}</td>
+      <td><strong>${escapeHtml(s.name)}</strong></td>
+      <td><a href="${s.base_url}" target="_blank" rel="noopener">${escapeHtml(s.base_url)}</a></td>
+      <td>${escapeHtml(s.method_label)}</td>
+      <td><button class="small secondary" onclick="toggleShopById(${s.id})">${s.enabled ? "✅ actif" : "— inactif"}</button></td>
       <td>
-        <button class="small secondary" onclick='fillForm(${JSON.stringify(s)})'>modifier</button>
+        <button class="small secondary" onclick="editShop(${s.id})">modifier</button>
         <button class="small danger" onclick="removeShop(${s.id})">suppr.</button>
       </td>`;
     tb.appendChild(tr);

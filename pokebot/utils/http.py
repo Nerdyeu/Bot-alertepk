@@ -44,7 +44,10 @@ class HttpClient:
             follow_redirects=True,
             headers={
                 "User-Agent": settings.user_agent,
-                "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                # En-tete oriente HTML : certains sites (PrestaShop, etc.) renvoient un
+                # corps VIDE si on privilegie application/json. Les endpoints JSON
+                # (Shopify .json, ZebraDex, API eBay) renvoient du JSON quoi qu'il arrive.
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6",
             },
         )
@@ -88,11 +91,20 @@ class HttpClient:
             raise BlockedError(f"robots.txt interdit l'acces a {url}")
 
     # -- requetes -----------------------------------------------------------
-    def get(self, url: str, params: dict | None = None) -> httpx.Response:
-        self._check_allowed(url)
+    def get(
+        self,
+        url: str,
+        params: dict | None = None,
+        headers: dict | None = None,
+        ignore_robots: bool = False,
+    ) -> httpx.Response:
+        # `ignore_robots` est un opt-in explicite, par requete (jamais global) :
+        # utilise uniquement pour l'endpoint public de cote ZebraDex.
+        if not ignore_robots:
+            self._check_allowed(url)
         self._throttle(url)
         try:
-            resp = self._client.get(url, params=params)
+            resp = self._client.get(url, params=params, headers=headers)
         except httpx.TimeoutException as exc:
             raise BlockedError(f"timeout ({self.settings.request_timeout}s)") from exc
         except httpx.HTTPError as exc:
@@ -116,8 +128,14 @@ class HttpClient:
                 "(souvent liee a l'IP : reessayez depuis votre PC perso)"
             )
 
-    def get_json(self, url: str, params: dict | None = None) -> dict:
-        resp = self.get(url, params=params)
+    def get_json(
+        self,
+        url: str,
+        params: dict | None = None,
+        headers: dict | None = None,
+        ignore_robots: bool = False,
+    ):
+        resp = self.get(url, params=params, headers=headers, ignore_robots=ignore_robots)
         if resp.status_code == 404:
             raise StructureError(f"endpoint introuvable (HTTP 404) : {url}")
         ctype = resp.headers.get("content-type", "")

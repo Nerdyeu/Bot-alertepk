@@ -53,6 +53,9 @@ def refresh_reference(
             product.reference_price = result.price
             product.reference_source = result.source
             product.reference_updated_at = now
+            # On complete l'image du produit si absente (confirmation par image)
+            if result.image_url and not product.image_url:
+                product.image_url = result.image_url
             db.add(product)
         if result.note:
             log.info("Cote %s [%s]: %s", product.name, result.source, result.note)

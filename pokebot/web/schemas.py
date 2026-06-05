@@ -9,6 +9,7 @@ class ProductIn(BaseModel):
     set_code: str | None = None
     image_url: str | None = None
     reference_price: float | None = None
+    reference_source: str = "manual"
     threshold_pct: float | None = None
     enabled: bool = True
     notes: str | None = None
@@ -26,10 +27,7 @@ class LinkIn(BaseModel):
 
 
 class ShopIn(BaseModel):
-    key: str
     name: str
     base_url: str
-    adapter: str = "shopify"
+    search_method: str = "shopify"
     enabled: bool = True
-    config: dict = {}
-    note: str | None = None

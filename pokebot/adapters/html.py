@@ -40,7 +40,10 @@ class HtmlAdapter(ShopAdapter):
     def _search(self, query: str, product: Product) -> ProductResult:
         template = self.config.get("search_url")
         if not template:
-            raise StructureError("config 'search_url' manquante pour cet adaptateur HTML")
+            raise NotFoundError(
+                "ce site fonctionne par lien direct : renseigne l'URL du produit "
+                "(onglet Produits → « URL/requête par boutique »)"
+            )
         url = template.format(query=quote_plus(query))
         resp = self.http.get(url)
         soup = BeautifulSoup(resp.text, "lxml")

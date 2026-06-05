@@ -103,22 +103,42 @@ Les alertes s'affichent **toujours** dans l'interface, même sans canal configur
 
 ## 🔭 ZebraDex — prix de référence
 
-ZebraDex (`zebradex.fr`) n'expose **pas d'API publique documentée** à ce jour, et la plupart des prix
-sont derrière un **compte**. Le bot propose donc, **sans jamais contourner l'authentification** :
+La **cote de référence** d'un produit est sa valeur sur ZebraDex (`zebradex.fr`). Deux modes
+(`REFERENCE_PROVIDER`), **sans jamais contourner d'authentification ni de captcha** :
 
-1. **`manual` (par défaut, recommandé)** — vous saisissez/mettez à jour la cote du produit dans
-   l'interface (bouton « cote »). La cote est historisée pour le graphique. Zéro risque CGU.
-2. **`zebradex` (branchable, désactivé par défaut)** — deux voies propres prévues dans
-   `pokebot/reference/zebradex.py` :
-   - `ZEBRADEX_API_BASE` : si vous disposez d'un **point d'accès JSON légitime** (ex. API d'app
-     officielle), le bot l'interroge en lecture seule.
-   - Identifiants personnels (`ZEBRADEX_EMAIL`/`PASSWORD`) : réservé à une **lecture authentifiée avec
-     vos propres identifiants**, dans le respect des CGU. **Non activé** tant qu'un flux officiel/autorisé
-     n'est pas confirmé (aucun contournement de protection).
+### `zebradex` (par défaut) — récupération automatique
 
-   En l'absence de l'un ou l'autre, on **retombe proprement** sur la cote manuelle.
+ZebraDex sert à ses **visiteurs non connectés** un endpoint JSON de recherche qui renvoie la cote des
+produits scellés :
 
-La cote n'est rafraîchie qu'**une fois par jour max** (`REFERENCE_REFRESH_HOURS`).
+```
+GET https://zebradex.fr/include/search/autocomplete.php?q=<nom>&lang=fr&type=sealed
+→ [{ "name", "code", "url", "image_url", "price", "ebay_url", "cardmarket_url" }, ...]
+```
+
+Le bot interroge cet endpoint en **lecture seule**, fait correspondre votre produit par son **nom**
+(matching tolérant), récupère `price` comme cote, et en profite pour **auto-remplir l'image** du produit
+(utile à la confirmation par image). La cote est **mise en cache** et n'est interrogée qu'**1×/jour max**
+(`REFERENCE_REFRESH_HOURS`), avec rate-limiting.
+
+> ⚠️ **robots.txt** : cet endpoint est sous `/include/`, que le `robots.txt` de ZebraDex interdit aux
+> crawlers. Le réglage **`ZEBRADEX_IGNORE_ROBOTS=true`** (activé par défaut, votre choix) autorise cette
+> requête **uniquement pour ZebraDex**, en lecture seule et 1×/jour. **Le scraping des boutiques, lui,
+> respecte toujours robots.txt.** Passez ce réglage à `false` pour basculer en saisie manuelle.
+
+Si un produit n'est pas trouvé sur ZebraDex (ou en cas d'erreur réseau), on **retombe proprement** sur
+la cote saisie manuellement.
+
+### `manual` — saisie dans l'interface
+
+`REFERENCE_PROVIDER=manual` : vous saisissez/mettez à jour la cote vous‑même (bouton « cote » sur la page
+Produits). Aucune requête vers ZebraDex. La cote est historisée pour le graphique.
+
+> Option avancée : `ZEBRADEX_API_BASE` permet de pointer vers une autre base d'API JSON ; une lecture
+> authentifiée avec **vos** identifiants (`ZEBRADEX_EMAIL`/`PASSWORD`) reste possible à brancher dans le
+> respect des CGU, mais n'est pas activée par défaut.
+
+L'historique du graphique utilise **uniquement la cote ZebraDex** (source jugée fiable).
 
 ---
 
@@ -130,7 +150,8 @@ La cote n'est rafraîchie qu'**une fois par jour max** (`REFERENCE_REFRESH_HOURS
 | Magic Bazar, Cartamania, Ludifolie, Otaku Manga | `html` | ⚙️ à configurer | sélecteurs CSS dans la config du site |
 | Fnac, Cultura, Amazon, Micromania | `blocked` | ⛔ non scrappées | anti-bot / API officielle requise |
 | Cardmarket | `blocked` | ⛔ | **API Cardmarket** officielle (OAuth) requise |
-| eBay | `blocked` | ⛔ | **API eBay Browse** officielle (clé) requise |
+| Vinted, Leboncoin | `blocked` | ⛔ | anti-bot + CGU ; utiliser leurs **alertes natives** |
+| **eBay** | `ebay` | ✅ via API | **API officielle Browse** (clé gratuite à configurer) |
 
 > **Note importante (anti-bot & IP).** Plusieurs boutiques Shopify renvoient une page
 > *« Verifying your connection… »* aux requêtes venant d'**IP datacenter/cloud**. Depuis votre
@@ -140,12 +161,19 @@ La cote n'est rafraîchie qu'**une fois par jour max** (`REFERENCE_REFRESH_HOURS
 
 ### Marché secondaire (propre)
 
-- **Cardmarket** : inscrivez-vous au programme **MKM API** (OAuth 1.0a), puis créez un adaptateur
-  `cardmarket` (clé/secret dans `.env`). Aucun scraping.
-- **eBay** : utilisez l'**API Browse** (App ID / OAuth) pour rechercher des annonces, puis un adaptateur `ebay`.
-
-Ces deux intégrations sont laissées en `blocked` par défaut (pas de scraping), prêtes à être
-remplacées par un adaptateur officiel.
+- **eBay** : adaptateur **`ebay`** inclus, basé sur l'**API officielle Browse** (aucun scraping).
+  1. Crée un compte développeur gratuit sur **https://developer.ebay.com/** → *My Account / Application Keys*.
+  2. Récupère ton **App ID (Client ID)** et **Cert ID (Client Secret)** de production.
+  3. Mets-les dans `.env` (`EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`), puis **active** la boutique « eBay »
+     dans l'onglet *Sites*.
+  - Le bot fait un flux OAuth2 *client credentials*, cherche les annonces (achat immédiat par défaut),
+    et renvoie la **moins chère qui correspond** (prix hors frais de port). Filtre configurable dans la
+    config de la boutique (ex. neuf seulement : `"filter": "buyingOptions:{FIXED_PRICE},conditionIds:{1000}"`).
+- **Cardmarket** : laissé en `blocked` ; nécessite le programme **MKM API** (OAuth). Un adaptateur
+  `cardmarket` peut être ajouté sur le même modèle qu'eBay.
+- **Vinted / Leboncoin** : **non supportés** volontairement. Protections anti‑bot agressives + CGU
+  interdisant le scraping → laissés en `blocked` (signalés comme tels). Pour Vinted, le plus simple et
+  100 % légal est d'utiliser ses **alertes natives** (recherche sauvegardée dans l'appli).
 
 ---
 
