@@ -44,7 +44,10 @@ class HttpClient:
             follow_redirects=True,
             headers={
                 "User-Agent": settings.user_agent,
-                "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+                # En-tete oriente HTML : certains sites (PrestaShop, etc.) renvoient un
+                # corps VIDE si on privilegie application/json. Les endpoints JSON
+                # (Shopify .json, ZebraDex, API eBay) renvoient du JSON quoi qu'il arrive.
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.6",
             },
         )
