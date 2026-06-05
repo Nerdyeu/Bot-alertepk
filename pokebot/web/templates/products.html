@@ -39,6 +39,8 @@
 {% block script %}
 <script>
 let SHOPS = [];
+let PRODUCTS_BY_ID = {};
+function editProduct(id) { const p = PRODUCTS_BY_ID[id]; if (p) fillForm(p); }
 
 function form() {
   return {
@@ -136,9 +138,11 @@ function linksBlock(p) {
 async function load() {
   const [prods, shops] = await Promise.all([apiGet("/api/products"), apiGet("/api/shops")]);
   SHOPS = shops.shops;
+  PRODUCTS_BY_ID = {};
   const tb = document.getElementById("products-body");
   tb.innerHTML = "";
   for (const p of prods.products) {
+    PRODUCTS_BY_ID[p.id] = p;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
@@ -151,7 +155,7 @@ async function load() {
       <td>${p.enabled ? "✅" : "—"}</td>
       <td class="muted">${fmtDate(p.reference_updated_at)}</td>
       <td>
-        <button class="small secondary" onclick='fillForm(${JSON.stringify(p)})'>modifier</button>
+        <button class="small secondary" onclick="editProduct(${p.id})">modifier</button>
         <button class="small danger" onclick="removeProduct(${p.id})">suppr.</button>
       </td>`;
     tb.appendChild(tr);
@@ -159,52 +163,65 @@ async function load() {
 }
 
 // --- Recherche & ajout depuis ZebraDex ---
-function zbdRow(item) {
+let zbdLast = [];
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function zbdRow(item, idx) {
   const cote = item.price != null ? money(item.price) : '<span class="muted">cote n/a</span>';
-  const code = item.set_code ? ` <span class="muted">${item.set_code}</span>` : "";
+  const code = item.set_code ? ` <span class="muted">${escapeHtml(item.set_code)}</span>` : "";
   const img = item.image_url
     ? `<img src="${item.image_url}" loading="lazy" style="width:42px;height:42px;object-fit:contain;border-radius:4px;background:#fff;flex:0 0 auto">`
     : "";
-  const payload = encodeURIComponent(JSON.stringify({
-    name: item.name, set_code: item.set_code, image_url: item.image_url, reference_price: item.price,
-  }));
   return `<div class="linkrow" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:8px 0">
     <div style="display:flex;align-items:center;gap:10px;min-width:0">
       ${img}
-      <div style="min-width:0"><strong>${item.name}</strong>${code}<br><span class="muted">cote ${cote}</span></div>
+      <div style="min-width:0"><strong>${escapeHtml(item.name)}</strong>${code}<br><span class="muted">cote ${cote}</span></div>
     </div>
-    <button class="small" onclick='addFromZbd("${payload}", this)'>+ Ajouter</button>
+    <button class="small" data-add="${idx}">+ Ajouter</button>
   </div>`;
 }
 
-async function addFromZbd(encoded, btn) {
-  const data = JSON.parse(decodeURIComponent(encoded));
-  data.reference_source = "zebradex";
-  data.enabled = true;
+async function addFromZbd(item, btn) {
+  const body = {
+    name: item.name, set_code: item.set_code, image_url: item.image_url,
+    reference_price: item.price, reference_source: "zebradex", enabled: true,
+  };
   try {
-    await apiPost("/api/products", data);
+    await apiPost("/api/products", body);
     btn.textContent = "✓ ajouté";
     btn.disabled = true;
-    toast("Produit ajouté : " + data.name);
+    toast("Produit ajouté : " + item.name);
     load();
   } catch (e) { toast("Erreur: " + e.message, false); }
 }
+
+// Clic sur "+ Ajouter" via delegation (robuste meme avec apostrophes dans les noms)
+document.getElementById("zbd-results").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-add]");
+  if (!btn || btn.disabled) return;
+  const item = zbdLast[parseInt(btn.dataset.add, 10)];
+  if (item) addFromZbd(item, btn);
+});
 
 let zbdTimer = null;
 document.getElementById("zbd-q").addEventListener("input", (e) => {
   clearTimeout(zbdTimer);
   const q = e.target.value.trim();
   const box = document.getElementById("zbd-results");
-  if (q.length < 2) { box.innerHTML = ""; return; }
+  if (q.length < 2) { box.innerHTML = ""; zbdLast = []; return; }
   box.innerHTML = '<span class="muted">recherche…</span>';
   zbdTimer = setTimeout(async () => {
     try {
       const r = await apiGet("/api/zebradex/search?q=" + encodeURIComponent(q));
-      if (!r.results || !r.results.length) {
+      zbdLast = r.results || [];
+      if (!zbdLast.length) {
         box.innerHTML = '<span class="muted">aucun résultat' + (r.error ? " (" + r.error + ")" : "") + "</span>";
         return;
       }
-      box.innerHTML = r.results.map(zbdRow).join("");
+      box.innerHTML = zbdLast.map(zbdRow).join("");
     } catch (e) { box.innerHTML = '<span class="fail">erreur : ' + e.message + "</span>"; }
   }, 350);
 });

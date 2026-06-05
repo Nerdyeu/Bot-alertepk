@@ -37,6 +37,9 @@
 {% block script %}
 <script>
 let ADAPTERS = ["shopify", "html", "blocked"];
+let SHOPS_BY_ID = {};
+function editShop(id) { const s = SHOPS_BY_ID[id]; if (s) fillForm(s); }
+function toggleShopById(id) { const s = SHOPS_BY_ID[id]; if (s) toggleShop(s); }
 
 function form() {
   let config = {};
@@ -103,16 +106,18 @@ async function load() {
   document.getElementById("s-adapter").innerHTML = ADAPTERS.map(a => `<option value="${a}">${a}</option>`).join("");
   const tb = document.getElementById("shops-body");
   tb.innerHTML = "";
+  SHOPS_BY_ID = {};
   for (const s of data.shops) {
+    SHOPS_BY_ID[s.id] = s;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><strong>${s.name}</strong> <span class="muted">${s.key}</span></td>
       <td><a href="${s.base_url}" target="_blank" rel="noopener">${s.base_url}</a></td>
       <td>${s.adapter}</td>
-      <td><button class="small secondary" onclick='toggleShop(${JSON.stringify(s)})'>${s.enabled ? "✅ actif" : "— inactif"}</button></td>
+      <td><button class="small secondary" onclick="toggleShopById(${s.id})">${s.enabled ? "✅ actif" : "— inactif"}</button></td>
       <td class="muted">${s.note || ""}</td>
       <td>
-        <button class="small secondary" onclick='fillForm(${JSON.stringify(s)})'>modifier</button>
+        <button class="small secondary" onclick="editShop(${s.id})">modifier</button>
         <button class="small danger" onclick="removeShop(${s.id})">suppr.</button>
       </td>`;
     tb.appendChild(tr);
