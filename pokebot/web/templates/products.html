@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Produits — Bot-alertepk{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h2 id="form-title">Nouveau produit</h2>
+  <input type="hidden" id="p-id" />
+  <div class="grid-form">
+    <div><label>Nom *</label><input id="p-name" placeholder="ETB Chaos Ascendant ME04" /></div>
+    <div><label>Code extension</label><input id="p-set" placeholder="ME04" /></div>
+    <div><label>Cote ZebraDex (€)</label><input id="p-ref" type="number" step="0.01" placeholder="59.90" /></div>
+    <div><label>Seuil % (vide = global)</label><input id="p-th" type="number" step="1" placeholder="5" /></div>
+    <div><label>URL image (optionnel)</label><input id="p-img" placeholder="https://…/image.jpg" /></div>
+    <div><label>Actif</label><select id="p-enabled"><option value="true">Oui</option><option value="false">Non</option></select></div>
+  </div>
+  <div><label>Notes</label><textarea id="p-notes"></textarea></div>
+  <div style="margin-top:10px;display:flex;gap:10px">
+    <button id="p-save">Enregistrer</button>
+    <button class="secondary" id="p-cancel" style="display:none">Annuler</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Produits surveilles</h2>
+  <table>
+    <thead><tr><th>Produit</th><th>Cote</th><th>Seuil</th><th>Actif</th><th>MAJ cote</th><th>Actions</th></tr></thead>
+    <tbody id="products-body"></tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+let SHOPS = [];
+
+function form() {
+  return {
+    name: document.getElementById("p-name").value.trim(),
+    set_code: document.getElementById("p-set").value.trim() || null,
+    reference_price: parseFloat(document.getElementById("p-ref").value) || null,
+    threshold_pct: document.getElementById("p-th").value === "" ? null : parseFloat(document.getElementById("p-th").value),
+    image_url: document.getElementById("p-img").value.trim() || null,
+    enabled: document.getElementById("p-enabled").value === "true",
+    notes: document.getElementById("p-notes").value.trim() || null,
+  };
+}
+function resetForm() {
+  document.getElementById("p-id").value = "";
+  ["p-name","p-set","p-ref","p-th","p-img","p-notes"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("p-enabled").value = "true";
+  document.getElementById("form-title").textContent = "Nouveau produit";
+  document.getElementById("p-cancel").style.display = "none";
+}
+function fillForm(p) {
+  document.getElementById("p-id").value = p.id;
+  document.getElementById("p-name").value = p.name;
+  document.getElementById("p-set").value = p.set_code || "";
+  document.getElementById("p-ref").value = p.reference_price ?? "";
+  document.getElementById("p-th").value = p.threshold_pct ?? "";
+  document.getElementById("p-img").value = p.image_url || "";
+  document.getElementById("p-enabled").value = p.enabled ? "true" : "false";
+  document.getElementById("p-notes").value = p.notes || "";
+  document.getElementById("form-title").textContent = "Modifier : " + p.name;
+  document.getElementById("p-cancel").style.display = "inline-block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.getElementById("p-save").addEventListener("click", async () => {
+  const data = form();
+  if (!data.name) return toast("Le nom est requis", false);
+  const id = document.getElementById("p-id").value;
+  try {
+    if (id) await apiPut("/api/products/" + id, data);
+    else await apiPost("/api/products", data);
+    toast("Produit enregistre");
+    resetForm(); load();
+  } catch (e) { toast("Erreur: " + e.message, false); }
+});
+document.getElementById("p-cancel").addEventListener("click", resetForm);
+
+async function setReference(id) {
+  const v = prompt("Nouvelle cote ZebraDex (€) :");
+  if (v === null || v === "") return;
+  try { await apiPost(`/api/products/${id}/reference`, { price: parseFloat(v) }); toast("Cote mise a jour"); load(); }
+  catch (e) { toast("Erreur: " + e.message, false); }
+}
+async function removeProduct(id) {
+  if (!confirm("Supprimer ce produit ?")) return;
+  try { await apiDel("/api/products/" + id); toast("Produit supprime"); load(); }
+  catch (e) { toast("Erreur: " + e.message, false); }
+}
+async function saveLink(productId, container) {
+  const shop_id = parseInt(container.querySelector(".l-shop").value);
+  const direct_url = container.querySelector(".l-url").value.trim() || null;
+  const search_query = container.querySelector(".l-query").value.trim() || null;
+  try { await apiPost(`/api/products/${productId}/links`, { shop_id, direct_url, search_query, enabled: true }); toast("Lien enregistre"); load(); }
+  catch (e) { toast("Erreur: " + e.message, false); }
+}
+async function removeLink(productId, shopId) {
+  try { await apiDel(`/api/products/${productId}/links/${shopId}`); toast("Lien supprime"); load(); }
+  catch (e) { toast("Erreur: " + e.message, false); }
+}
+
+function shopName(id) { const s = SHOPS.find(s => s.id === id); return s ? s.name : "#" + id; }
+function shopOptions(sel) {
+  return SHOPS.map(s => `<option value="${s.id}" ${s.id === sel ? "selected" : ""}>${s.name}</option>`).join("");
+}
+
+function linksBlock(p) {
+  const existing = p.links.map(l => `
+    <div class="linkrow">
+      <strong>${shopName(l.shop_id)}</strong>
+      <span class="muted">${l.direct_url ? "URL: " + l.direct_url : (l.search_query ? "requete: " + l.search_query : "—")}</span>
+      <button class="small danger" onclick="removeLink(${p.id}, ${l.shop_id})">retirer</button>
+    </div>`).join("");
+  return `
+    <details>
+      <summary>URL/requete par boutique (${p.links.length})</summary>
+      ${existing}
+      <div class="linkrow" style="margin-top:8px">
+        <select class="l-shop">${shopOptions()}</select>
+        <input class="l-url" placeholder="URL directe produit (optionnel)" style="min-width:260px" />
+        <input class="l-query" placeholder="requete de recherche (optionnel)" />
+        <button class="small" onclick="saveLink(${p.id}, this.closest('details'))">ajouter / mettre a jour</button>
+      </div>
+    </details>`;
+}
+
+async function load() {
+  const [prods, shops] = await Promise.all([apiGet("/api/products"), apiGet("/api/shops")]);
+  SHOPS = shops.shops;
+  const tb = document.getElementById("products-body");
+  tb.innerHTML = "";
+  for (const p of prods.products) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>
+        <strong>${p.name}</strong> ${p.set_code ? `<span class="muted">${p.set_code}</span>` : ""}
+        ${linksBlock(p)}
+      </td>
+      <td>${p.reference_price !== null ? money(p.reference_price) : '<span class="muted">non saisie</span>'}
+          <button class="small secondary" onclick="setReference(${p.id})">cote</button></td>
+      <td>${p.threshold_pct ?? p.effective_threshold + " (global)"}</td>
+      <td>${p.enabled ? "✅" : "—"}</td>
+      <td class="muted">${fmtDate(p.reference_updated_at)}</td>
+      <td>
+        <button class="small secondary" onclick='fillForm(${JSON.stringify(p)})'>modifier</button>
+        <button class="small danger" onclick="removeProduct(${p.id})">suppr.</button>
+      </td>`;
+    tb.appendChild(tr);
+  }
+}
+load();
+</script>
+{% endblock %}

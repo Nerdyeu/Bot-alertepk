@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord — Bot-alertepk{% endblock %}
+{% block content %}
+
+<div class="cards" id="cards"></div>
+
+<div class="panel">
+  <h2>Resultats de la derniere verification</h2>
+  <div class="filters">
+    <div><label>Site</label><select id="f-shop"><option value="">Tous</option></select></div>
+    <div><label>Produit</label><select id="f-product"><option value="">Tous</option></select></div>
+    <div><label>Reduction min. (%)</label><input id="f-discount" type="number" step="1" style="width:110px" placeholder="ex: 5" /></div>
+    <div><label>Stock</label>
+      <select id="f-stock">
+        <option value="all">Tous</option>
+        <option value="in_stock">En stock</option>
+        <option value="exclude_uncertain">Hors stock incertain</option>
+      </select>
+    </div>
+    <div><label>&nbsp;</label><label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" id="f-alert" style="width:auto" /> Alertes seulement</label></div>
+    <div><label>&nbsp;</label><button class="secondary" id="f-reset">Reinitialiser</button></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Produit</th><th>Site</th><th>Prix</th><th>Cote ZebraDex</th><th>Reduction</th>
+      <th>Stock</th><th>Fiabilite</th><th>Lien</th>
+    </tr></thead>
+    <tbody id="results-body"></tbody>
+  </table>
+  <p class="muted" id="results-empty" style="display:none">Aucun resultat. Ajoutez des produits puis lancez un scan.</p>
+</div>
+
+<div class="panel">
+  <h2>Historique de la cote (ZebraDex)</h2>
+  <div class="filters">
+    <div><label>Produit</label><select id="h-product"></select></div>
+  </div>
+  <canvas id="history-chart" height="90"></canvas>
+</div>
+
+<div class="panel">
+  <h2>Sites en echec (dernier scan)</h2>
+  <table>
+    <thead><tr><th>Site</th><th>Produit</th><th>Raison</th></tr></thead>
+    <tbody id="failures-body"></tbody>
+  </table>
+  <p class="muted" id="failures-empty" style="display:none">Aucun echec au dernier scan 🎉</p>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+let allResults = [];
+let chart = null;
+
+function discCell(r) {
+  if (r.discount_pct === null) return '<span class="disc-neg">—</span>';
+  const cls = r.discount_pct >= r.threshold ? "disc-pos" : "disc-neg";
+  return `<span class="${cls}">${pct(r.discount_pct)}</span>`;
+}
+function reliability(r) {
+  let s = r.match_score !== null ? `nom ${Math.round(r.match_score)}` : "—";
+  if (r.image_match_score !== null && r.image_match_score !== undefined) s += ` · img Δ${Math.round(r.image_match_score)}`;
+  return `<span class="muted">${s}</span>`;
+}
+
+function applyFilters() {
+  const shop = document.getElementById("f-shop").value;
+  const prod = document.getElementById("f-product").value;
+  const minDisc = parseFloat(document.getElementById("f-discount").value);
+  const stock = document.getElementById("f-stock").value;
+  const onlyAlert = document.getElementById("f-alert").checked;
+
+  const rows = allResults.filter(r => {
+    if (shop && String(r.shop_id) !== shop) return false;
+    if (prod && String(r.product_id) !== prod) return false;
+    if (!isNaN(minDisc) && (r.discount_pct === null || r.discount_pct < minDisc)) return false;
+    if (stock === "in_stock" && r.stock_status !== "in_stock") return false;
+    if (stock === "exclude_uncertain" && r.stock_status === "uncertain") return false;
+    if (onlyAlert && !r.is_alert) return false;
+    return true;
+  });
+
+  const tb = document.getElementById("results-body");
+  tb.innerHTML = "";
+  document.getElementById("results-empty").style.display = rows.length ? "none" : "block";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (r.is_alert) tr.className = "row-alert";
+    let main;
+    if (!r.ok) main = `<span class="fail">échec</span> <span class="muted">${r.error || ""}</span>`;
+    else if (!r.found) main = `<span class="muted">non trouvé</span>`;
+    else main = money(r.price, r.currency);
+    const link = r.url ? `<a href="${r.url}" target="_blank" rel="noopener">ouvrir ↗</a>` : "—";
+    tr.innerHTML = `
+      <td>${r.product_name}${r.set_code ? ` <span class="muted">${r.set_code}</span>` : ""}</td>
+      <td>${r.shop_name}</td>
+      <td>${main}</td>
+      <td>${money(r.reference_price)}</td>
+      <td>${discCell(r)}</td>
+      <td><span class="badge ${r.stock_status}">${r.stock_status}</span></td>
+      <td>${reliability(r)}</td>
+      <td>${link}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function loadResults() {
+  const [res, prods, shops] = await Promise.all([
+    apiGet("/api/results"), apiGet("/api/products"), apiGet("/api/shops")
+  ]);
+  allResults = res.results;
+
+  const fShop = document.getElementById("f-shop");
+  fShop.innerHTML = '<option value="">Tous</option>' +
+    shops.shops.map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+  const fProd = document.getElementById("f-product");
+  const hProd = document.getElementById("h-product");
+  const opts = prods.products.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+  fProd.innerHTML = '<option value="">Tous</option>' + opts;
+  hProd.innerHTML = opts;
+
+  applyFilters();
+  if (prods.products.length) loadHistory(prods.products[0].id);
+}
+
+async function loadSummary() {
+  const s = await apiGet("/api/summary");
+  const ls = s.last_scan ? (s.last_scan.summary || {}) : {};
+  const cards = [
+    ["Seuil global", s.global_threshold_pct + " %"],
+    ["Scan auto", "toutes les " + s.scan_interval_minutes + " min"],
+    ["Produits", ls.products ?? "—"],
+    ["Sites actifs", ls.shops ?? "—"],
+    ["Alertes (dernier scan)", ls.alerts ?? "—"],
+    ["Echecs", ls.failures ?? "—"],
+  ];
+  document.getElementById("cards").innerHTML = cards.map(
+    ([l, v]) => `<div class="card"><div class="value">${v}</div><div class="label">${l}</div></div>`
+  ).join("");
+}
+
+async function loadFailures() {
+  const f = await apiGet("/api/failures");
+  const tb = document.getElementById("failures-body");
+  tb.innerHTML = "";
+  document.getElementById("failures-empty").style.display = f.failures.length ? "none" : "block";
+  for (const x of f.failures) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${x.shop_name}</td><td>${x.product_name}</td><td class="fail">${x.error || ""}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function loadHistory(productId) {
+  const h = await apiGet("/api/history?product_id=" + productId);
+  const labels = h.points.map(p => new Date(p.t).toLocaleDateString("fr-FR"));
+  const data = h.points.map(p => p.price);
+  const ctx = document.getElementById("history-chart");
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [{ label: "Cote ZebraDex (€)", data, borderColor: "#4f8cff", backgroundColor: "rgba(79,140,255,0.15)", tension: 0.25, fill: true }] },
+    options: { scales: { x: { ticks: { color: "#9aa3bd" } }, y: { ticks: { color: "#9aa3bd" } } }, plugins: { legend: { labels: { color: "#e8ecf5" } } } }
+  });
+}
+
+function refreshAll() { loadSummary(); loadResults(); loadFailures(); }
+window.onScanComplete = refreshAll;
+
+["f-shop","f-product","f-discount","f-stock","f-alert"].forEach(id =>
+  document.getElementById(id).addEventListener("input", applyFilters));
+document.getElementById("f-reset").addEventListener("click", () => {
+  ["f-shop","f-product","f-stock"].forEach(id => document.getElementById(id).selectedIndex = 0);
+  document.getElementById("f-discount").value = "";
+  document.getElementById("f-alert").checked = false;
+  applyFilters();
+});
+document.getElementById("h-product").addEventListener("change", e => loadHistory(e.target.value));
+
+refreshAll();
+</script>
+{% endblock %}
