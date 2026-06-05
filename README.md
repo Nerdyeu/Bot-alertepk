@@ -103,22 +103,42 @@ Les alertes s'affichent **toujours** dans l'interface, même sans canal configur
 
 ## 🔭 ZebraDex — prix de référence
 
-ZebraDex (`zebradex.fr`) n'expose **pas d'API publique documentée** à ce jour, et la plupart des prix
-sont derrière un **compte**. Le bot propose donc, **sans jamais contourner l'authentification** :
+La **cote de référence** d'un produit est sa valeur sur ZebraDex (`zebradex.fr`). Deux modes
+(`REFERENCE_PROVIDER`), **sans jamais contourner d'authentification ni de captcha** :
 
-1. **`manual` (par défaut, recommandé)** — vous saisissez/mettez à jour la cote du produit dans
-   l'interface (bouton « cote »). La cote est historisée pour le graphique. Zéro risque CGU.
-2. **`zebradex` (branchable, désactivé par défaut)** — deux voies propres prévues dans
-   `pokebot/reference/zebradex.py` :
-   - `ZEBRADEX_API_BASE` : si vous disposez d'un **point d'accès JSON légitime** (ex. API d'app
-     officielle), le bot l'interroge en lecture seule.
-   - Identifiants personnels (`ZEBRADEX_EMAIL`/`PASSWORD`) : réservé à une **lecture authentifiée avec
-     vos propres identifiants**, dans le respect des CGU. **Non activé** tant qu'un flux officiel/autorisé
-     n'est pas confirmé (aucun contournement de protection).
+### `zebradex` (par défaut) — récupération automatique
 
-   En l'absence de l'un ou l'autre, on **retombe proprement** sur la cote manuelle.
+ZebraDex sert à ses **visiteurs non connectés** un endpoint JSON de recherche qui renvoie la cote des
+produits scellés :
 
-La cote n'est rafraîchie qu'**une fois par jour max** (`REFERENCE_REFRESH_HOURS`).
+```
+GET https://zebradex.fr/include/search/autocomplete.php?q=<nom>&lang=fr&type=sealed
+→ [{ "name", "code", "url", "image_url", "price", "ebay_url", "cardmarket_url" }, ...]
+```
+
+Le bot interroge cet endpoint en **lecture seule**, fait correspondre votre produit par son **nom**
+(matching tolérant), récupère `price` comme cote, et en profite pour **auto-remplir l'image** du produit
+(utile à la confirmation par image). La cote est **mise en cache** et n'est interrogée qu'**1×/jour max**
+(`REFERENCE_REFRESH_HOURS`), avec rate-limiting.
+
+> ⚠️ **robots.txt** : cet endpoint est sous `/include/`, que le `robots.txt` de ZebraDex interdit aux
+> crawlers. Le réglage **`ZEBRADEX_IGNORE_ROBOTS=true`** (activé par défaut, votre choix) autorise cette
+> requête **uniquement pour ZebraDex**, en lecture seule et 1×/jour. **Le scraping des boutiques, lui,
+> respecte toujours robots.txt.** Passez ce réglage à `false` pour basculer en saisie manuelle.
+
+Si un produit n'est pas trouvé sur ZebraDex (ou en cas d'erreur réseau), on **retombe proprement** sur
+la cote saisie manuellement.
+
+### `manual` — saisie dans l'interface
+
+`REFERENCE_PROVIDER=manual` : vous saisissez/mettez à jour la cote vous‑même (bouton « cote » sur la page
+Produits). Aucune requête vers ZebraDex. La cote est historisée pour le graphique.
+
+> Option avancée : `ZEBRADEX_API_BASE` permet de pointer vers une autre base d'API JSON ; une lecture
+> authentifiée avec **vos** identifiants (`ZEBRADEX_EMAIL`/`PASSWORD`) reste possible à brancher dans le
+> respect des CGU, mais n'est pas activée par défaut.
+
+L'historique du graphique utilise **uniquement la cote ZebraDex** (source jugée fiable).
 
 ---
 

@@ -73,6 +73,7 @@ def _run_scan(trigger: str) -> int:
                 refresh_reference(db, product, provider, settings)
             except Exception as exc:  # une cote en echec ne casse pas le scan
                 log.warning("Cote %s indisponible: %s", product.name, exc)
+        provider.close()
         db.commit()
 
         # 2) Pour chaque boutique, chaque produit
