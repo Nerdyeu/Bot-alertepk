@@ -35,6 +35,8 @@ class Shop(Base):
     name: Mapped[str] = mapped_column(String(160))
     base_url: Mapped[str] = mapped_column(String(255))
     adapter: Mapped[str] = mapped_column(String(40), default="shopify")
+    # "Maniere de rechercher" choisie dans l'UI ; pilote adapter + config.
+    search_method: Mapped[str] = mapped_column(String(40), default="shopify")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

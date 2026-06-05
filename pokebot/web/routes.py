@@ -1,22 +1,35 @@
 """Routes web : pages (dashboard, produits, sites) + API JSON."""
 from __future__ import annotations
 
+import re
 import threading
+import unicodedata
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..adapters import list_adapter_types
 from ..config import settings
 from ..core import scanner
 from ..database import SessionLocal
 from ..models import Observation, Product, ProductShop, ReferencePoint, ScanRun, Shop, utcnow
+from ..search_methods import build as build_method
+from ..search_methods import catalog as search_catalog
 from .schemas import LinkIn, ProductIn, ProductReferenceIn, ShopIn
 from .serializers import observation_to_dict, product_to_dict, shop_to_dict
+
+
+def _unique_slug(db: Session, name: str) -> str:
+    base = unicodedata.normalize("NFD", name or "site").encode("ascii", "ignore").decode().lower()
+    base = re.sub(r"[^a-z0-9]+", "-", base).strip("-") or "site"
+    slug, i = base, 2
+    while db.scalars(select(Shop).where(Shop.key == slug)).first() is not None:
+        slug = f"{base}-{i}"
+        i += 1
+    return slug
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -257,14 +270,21 @@ def api_delete_link(product_id: int, shop_id: int, db: Session = Depends(get_db)
 @router.get("/api/shops")
 def api_shops(db: Session = Depends(get_db)):
     shops = db.scalars(select(Shop).order_by(Shop.name))
-    return {"shops": [shop_to_dict(s) for s in shops], "adapter_types": list_adapter_types()}
+    return {"shops": [shop_to_dict(s) for s in shops], "search_methods": search_catalog()}
 
 
 @router.post("/api/shops")
 def api_create_shop(body: ShopIn, db: Session = Depends(get_db)):
-    if db.scalars(select(Shop).where(Shop.key == body.key)).first():
-        raise HTTPException(400, f"cle '{body.key}' deja utilisee")
-    shop = Shop(**body.model_dump())
+    adapter, config = build_method(body.search_method, body.base_url)
+    shop = Shop(
+        key=_unique_slug(db, body.name),
+        name=body.name,
+        base_url=body.base_url,
+        search_method=body.search_method,
+        adapter=adapter,
+        config=config,
+        enabled=body.enabled,
+    )
     db.add(shop)
     db.commit()
     db.refresh(shop)
@@ -276,8 +296,13 @@ def api_update_shop(shop_id: int, body: ShopIn, db: Session = Depends(get_db)):
     shop = db.get(Shop, shop_id)
     if not shop:
         raise HTTPException(404, "boutique introuvable")
-    for field, value in body.model_dump().items():
-        setattr(shop, field, value)
+    adapter, config = build_method(body.search_method, body.base_url)
+    shop.name = body.name
+    shop.base_url = body.base_url
+    shop.search_method = body.search_method
+    shop.adapter = adapter
+    shop.config = config
+    shop.enabled = body.enabled
     db.commit()
     db.refresh(shop)
     return shop_to_dict(shop)
@@ -291,6 +316,16 @@ def api_delete_shop(shop_id: int, db: Session = Depends(get_db)):
     db.delete(shop)
     db.commit()
     return {"deleted": shop_id}
+
+
+@router.post("/api/shops/clear")
+def api_clear_shops(db: Session = Depends(get_db)):
+    count = 0
+    for shop in db.scalars(select(Shop)):
+        db.delete(shop)
+        count += 1
+    db.commit()
+    return {"deleted": count}
 
 
 # =========================== helpers ===========================

@@ -27,10 +27,7 @@ class LinkIn(BaseModel):
 
 
 class ShopIn(BaseModel):
-    key: str
     name: str
     base_url: str
-    adapter: str = "shopify"
+    search_method: str = "shopify"
     enabled: bool = True
-    config: dict = {}
-    note: str | None = None
