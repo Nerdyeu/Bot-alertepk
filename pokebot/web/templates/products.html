@@ -3,7 +3,14 @@
 {% block content %}
 
 <div class="panel">
-  <h2 id="form-title">Nouveau produit</h2>
+  <h2>➕ Ajouter depuis ZebraDex</h2>
+  <p class="muted" style="margin-top:0">Tape le nom d'un produit ou d'une extension (ex. « étincelles », « prismatique », « chaos ») et clique sur <strong>+ Ajouter</strong>. La cote et l'image sont reprises automatiquement.</p>
+  <input id="zbd-q" placeholder="🔍 Rechercher un produit scellé sur ZebraDex…" style="width:100%" autocomplete="off" />
+  <div id="zbd-results" style="margin-top:10px"></div>
+</div>
+
+<div class="panel">
+  <h2 id="form-title">Nouveau produit (manuel)</h2>
   <input type="hidden" id="p-id" />
   <div class="grid-form">
     <div><label>Nom *</label><input id="p-name" placeholder="ETB Chaos Ascendant ME04" /></div>
@@ -150,6 +157,58 @@ async function load() {
     tb.appendChild(tr);
   }
 }
+
+// --- Recherche & ajout depuis ZebraDex ---
+function zbdRow(item) {
+  const cote = item.price != null ? money(item.price) : '<span class="muted">cote n/a</span>';
+  const code = item.set_code ? ` <span class="muted">${item.set_code}</span>` : "";
+  const img = item.image_url
+    ? `<img src="${item.image_url}" loading="lazy" style="width:42px;height:42px;object-fit:contain;border-radius:4px;background:#fff;flex:0 0 auto">`
+    : "";
+  const payload = encodeURIComponent(JSON.stringify({
+    name: item.name, set_code: item.set_code, image_url: item.image_url, reference_price: item.price,
+  }));
+  return `<div class="linkrow" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:8px 0">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      ${img}
+      <div style="min-width:0"><strong>${item.name}</strong>${code}<br><span class="muted">cote ${cote}</span></div>
+    </div>
+    <button class="small" onclick='addFromZbd("${payload}", this)'>+ Ajouter</button>
+  </div>`;
+}
+
+async function addFromZbd(encoded, btn) {
+  const data = JSON.parse(decodeURIComponent(encoded));
+  data.reference_source = "zebradex";
+  data.enabled = true;
+  try {
+    await apiPost("/api/products", data);
+    btn.textContent = "✓ ajouté";
+    btn.disabled = true;
+    toast("Produit ajouté : " + data.name);
+    load();
+  } catch (e) { toast("Erreur: " + e.message, false); }
+}
+
+let zbdTimer = null;
+document.getElementById("zbd-q").addEventListener("input", (e) => {
+  clearTimeout(zbdTimer);
+  const q = e.target.value.trim();
+  const box = document.getElementById("zbd-results");
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  box.innerHTML = '<span class="muted">recherche…</span>';
+  zbdTimer = setTimeout(async () => {
+    try {
+      const r = await apiGet("/api/zebradex/search?q=" + encodeURIComponent(q));
+      if (!r.results || !r.results.length) {
+        box.innerHTML = '<span class="muted">aucun résultat' + (r.error ? " (" + r.error + ")" : "") + "</span>";
+        return;
+      }
+      box.innerHTML = r.results.map(zbdRow).join("");
+    } catch (e) { box.innerHTML = '<span class="fail">erreur : ' + e.message + "</span>"; }
+  }, 350);
+});
+
 load();
 </script>
 {% endblock %}

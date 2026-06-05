@@ -127,6 +127,20 @@ def api_failures(db: Session = Depends(get_db)):
     return {"scan_id": last.id, "failures": failures}
 
 
+@router.get("/api/zebradex/search")
+def api_zebradex_search(q: str):
+    """Recherche de produits scelles sur ZebraDex, pour l'ajout rapide dans l'UI."""
+    from ..reference.zebradex import search_sealed
+
+    query = (q or "").strip()
+    if len(query) < 2:
+        return {"results": []}
+    try:
+        return {"results": search_sealed(settings, query)}
+    except Exception as exc:
+        return {"results": [], "error": str(exc)}
+
+
 @router.get("/api/history")
 def api_history(product_id: int, db: Session = Depends(get_db)):
     points = db.scalars(
@@ -153,8 +167,7 @@ def api_products(db: Session = Depends(get_db)):
 def api_create_product(body: ProductIn, db: Session = Depends(get_db)):
     product = Product(**body.model_dump())
     if product.reference_price is not None:
-        product.reference_source = "manual"
-        product.reference_updated_at = utcnow()
+        product.reference_updated_at = utcnow()  # source vient du body (manual ou zebradex)
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -169,7 +182,8 @@ def api_update_product(product_id: int, body: ProductIn, db: Session = Depends(g
     if not product:
         raise HTTPException(404, "produit introuvable")
     old_ref = product.reference_price
-    for field, value in body.model_dump().items():
+    # On ne touche pas a reference_source via le formulaire d'edition.
+    for field, value in body.model_dump(exclude={"reference_source"}).items():
         setattr(product, field, value)
     if product.reference_price is not None and product.reference_price != old_ref:
         product.reference_source = "manual"

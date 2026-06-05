@@ -9,6 +9,7 @@ class ProductIn(BaseModel):
     set_code: str | None = None
     image_url: str | None = None
     reference_price: float | None = None
+    reference_source: str = "manual"
     threshold_pct: float | None = None
     enabled: bool = True
     notes: str | None = None

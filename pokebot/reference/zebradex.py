@@ -57,6 +57,53 @@ def _build_query(name: str) -> str:
     return " ".join(distinctive) or " ".join(tokens)
 
 
+_URL_SETCODE = re.compile(r"/([a-z]{1,3}\d{1,2}[a-z]?)/", re.I)
+
+
+def _set_code_from_url(url: str | None) -> str | None:
+    m = _URL_SETCODE.search(url or "")
+    return m.group(1).upper() if m else None
+
+
+def search_sealed(settings, query: str, limit: int = 15) -> list[dict]:
+    """Recherche de produits SCELLES sur ZebraDex (pour l'ajout depuis l'UI).
+
+    Renvoie une liste normalisee : name, code (type), set_code, url, image_url, price.
+    Lecture seule, meme endpoint public que la cote.
+    """
+    base = (settings.zebradex_api_base or settings.zebradex_base).rstrip("/")
+    http = HttpClient(settings)
+    try:
+        items = http.get_json(
+            f"{base}/include/search/autocomplete.php",
+            params={"q": query, "lang": settings.zebradex_lang, "type": "sealed"},
+            headers=_HEADERS,
+            ignore_robots=settings.zebradex_ignore_robots,
+        )
+    finally:
+        http.close()
+
+    results: list[dict] = []
+    if isinstance(items, list):
+        for it in items[:limit]:
+            if not isinstance(it, dict):
+                continue
+            price = it.get("price")
+            try:
+                price = float(price) if price not in (None, "") else None
+            except (TypeError, ValueError):
+                price = None
+            results.append({
+                "name": it.get("name"),
+                "code": it.get("code"),
+                "set_code": _set_code_from_url(it.get("url")),
+                "url": it.get("url"),
+                "image_url": it.get("image_url"),
+                "price": price,
+            })
+    return results
+
+
 class ZebradexReferenceProvider(ReferenceProvider):
     name = "zebradex"
 
